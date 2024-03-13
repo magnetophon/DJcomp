@@ -1,91 +1,208 @@
 
 declare name "DJcomp";
 declare version "0.1";
-declare author "Bart Brouns bart@magnetophon.nl";
-declare license "AGPLv3";
+declare author "Bart Brouns";
+declare license "AGPL-3.0-only";
+declare copyright "2024, Bart Brouns";
 
 import("stdfaust.lib");
 
+// TODO:
+// Auto Makeup: compensates for the drop in output level caused by gain reduction. It
+// determines the theoretical compensation at a given threshold / ratio setting – for instance
+// -20dB and 4:1 gives 5dB – and applies half of that value (2.5dB) to achieve the same perceived
+// loudness.�
+//  Also use attack + release time?
+//
+// Fast release after a transient,
+// Slow release after longer periods ofDog of Man gain reduction.
+// Aditionally adjust the release time depending on the current amount of gain reduction
+
+top = hslider("top", 1, 0.001, 100, 0.001);
+bottom = hslider("bottom", 1, 0.001, 100, 0.001);
+speedFactor = hslider("speedF", 0, 0, 1, 0.001);
 
 process =
   DJcomp;
 
-DJcomp(l,r) =
-  (gain_computer_lin(l,r)
-   <:(_*l,_*r,_)
-  )~(_,_);
+linLogInf =
+  (it.interpolate_linear(speedFactor,bottom,bottom/ma.EPSILON)
+   : hbargraph("[0]linear", 0, 100))
+,
+  (interpolate_logarithmic(speedFactor,bottom,
+                           bottom/ma.EPSILON
+                          )
+   : hbargraph("[1]logarithmic", 0, 100)
+  )
+,
+  (fade_to_inf(speedFactor,bottom)
+   : hbargraph("[2]to inf", 0, 100))
+;
 
-gain_computer_lin(l,r,FBl,FBr) =
-  level
-  : gain_computer_non_smoothed_db(1,threshold,knee)
-  : ba.db2linear
-    // : smootherCascade(N, ma.EPSILON, rel)
-  : si.onePoleSwitching(sdRel,0)
-    // : si.onePoleSwitching(rel*0.25,0)
-    // : si.onePoleSwitching(rel*0.25,0)
+
+fade_to_inf(dv,v0) =
+  v0/max(1-dv,ma.EPSILON);
+
+interpolate_logarithmic(dv,v0,v1) =
+  pow(((v1/v0)),dv)*v0
+;
+DJcomp =
+  compressor_N_chan(strength,thresh,attack,release,knee,1,2);
+
+compressor_N_chan(strength,thresh,att,rel,knee,link,N) =
+  par(i, N, _*inputGain)
+  <: (
+  par(i, N, _)
+ ,(compression_gain_N_chan(strength,thresh,att,rel,knee,link,N))
+)
+  :(ro.interleave(N,2)
+    : par(i,N, *))
+;
+
+compression_gain_N_chan(strength,thresh,att,rel,knee,link,1) =
+  abs:ba.linear2db
+  : compression_gain_mono(strength,thresh,att,rel,knee);
+
+compression_gain_N_chan(strength,thresh,att,rel,knee,link,N) =
+  par(i, N, abs:ba.linear2db)
+  <: (si.bus(N),(ba.parallelMax(N) <: si.bus(N)))
+  : ro.interleave(N,2)
+  : par(i,N,(it.interpolate_linear(link))
+       )
+  : par(i,N,compression_gain_mono(strength,thresh,att,rel,knee)) ;
+
+compression_gain_mono(strength,thresh,att,rel,knee) =
+  loop~(_,_)
+       : (_,!)
+       : ba.db2linear
 with {
-  level =
-    max(abs(l),abs(r))
-    : ba.linear2db;
-  FBlevel =
-    // hslider("FBlevel", 0, -70, 70, 0.1);
-    max(abs(FBl),abs(FBr))
-    : ba.linear2db;
-  sdRel =
-    rel/
-    select2(checkbox("slowdown")
-           , 1
-           , (
-             (((FBlevel-threshold)*-1/sdKnee:min(1):max(ma.EPSILON)))
-             : si.onePoleSwitching(rel,SDatt)
-               // :pow(hslider("power", 1, 0.1, 5, 0.1))
-               // :hbargraph("slow down", 0, 1)
-           ))
-  ;
-  SDatt =
-    select2(FBlevel<threshold
-           , 0
-           ,0.42*0.001);
-  // , hslider("sd att", 0.42, 0, 200, 0.01)*0.001);
-  N=4;
-  T = ma.T;
-  PI = ma.PI;
-  TWOPI = 2.0 * PI;
-  TWOPIT = TWOPI * T;
-  /* Cascaded one-pole smoothers with attack and release times. */
-  smoother(N, att, rel, x) = loop ~ _
+  loop(prevGain,prevRef) =
+    gain,ref
   with {
-    loop(fb) = coeff * fb + (1.0 - coeff) * x
-    with {
-    cutoffCorrection = 1.0 / sqrt(pow(2.0, 1.0 / N) - 1.0);
-    coeff = ba.if(x > fb, attCoeff, relCoeff);
-    TWOPITC = TWOPIT * cutoffCorrection;
-    attCoeff = exp(-TWOPITC / att);
-    relCoeff = exp(-TWOPITC / rel);
-  };
-  };
-  smootherCascade(N, att, rel, x) = x : seq(i, N, smoother(N, att, rel));
+  gain =
+    gain_computer(strength,thresh,knee)
+    // <:  (ba.db2linear,_)
+    // : autoSmoother
+    : ba.db2linear
+    : smootherARorder(maxOrder, orderRelR,orderAttR, adaptiveRel, att)
+    : ba.linear2db
+    : hbargraph("GR", -24, 0);
+  adaptiveRel =
+    // select2(checkbox("adaptive")
+    // ,
+    fade_to_inf(1-dv,rel)
+    // ,interpolate_logarithmic(1-dv,rel, hslider("slow adap", 1, 1, 100, 1))
+    // )
+            ;
+            ref =
+              (prevGain+slowKnee)
+              : min(0)
+              : ba.db2linear
+              : smootherOrder(maxOrder,refOrder,refRel,0)
+              : ba.linear2db
+              : hbargraph("ref[unit:dB]", -24, 0)
+            ;
+            refRel =
+              select2( checkbox("refRelSel")
+                       // , fade_to_inf(dv, relR)
+                     , interpolate_logarithmic(dv, relR,relR/ma.EPSILON)
+                     , interpolate_logarithmic(dv, relR,hslider("slow ref", 10, 1, 100, 1))
+                       // , it.interpolate_linear(dv, relR,hslider("slow ref", 10, 1, 100, 1))
+                     )
+            ;
+            dv = ((((fastGR
+                     +dead
+                    ):min(0))
+                   / (slowKnee
+                      -dead
+                     )
+                  )*-1):min(1)
+                 : hbargraph("dv", 0, 1)
+            ;
+            fastGR = (prevGain-prevRef):min(0):hbargraph("fast GR[unit:dB]", -24, 0);
+            autoSmoother(lin,db) =
+              lin
+              : smoother(1,autoRelease(db),0)
+              : smoother(4,rel,att)
+            ;
+
+            autoRelease(GR) =
+              rel *
+              ( ((GR+dead)
+                 :min(0)
+                  *-1
+                 :smootherARorder(maxOrder,orderAttR, orderRelR, attR, relR)
+                  * factor
+                ):hbargraph("usf", 0, 10)
+              );
+            maxOrder = 32;
+            attR = hslider("[04]slow attack[unit:ms] [scale:log]",700, 10, 3000,10)*0.001;
+            orderAttR =
+              1;
+            // hslider("[05]slow attack order", 4, 1, maxOrder, 1);
+            relR = hslider("[06]slow release[unit:ms] [scale:log]",700,0.1,5000,0.1)*0.001;
+            orderRelR =
+              1;
+            // hslider("[07]slow release order", 1, 1, maxOrder, 1);
+            factor = hslider("[08]factor", 0.1, 0, 10, 0.1);
+            slowKnee = hslider("[09]slow knee",1,0,72,0.1);
+            refOrder =
+              1;
+            // hslider("[10]ref release order", 1, 1, maxOrder, 1);
+            dead = hslider("dead", 0, 0, 24, 1);
+};
 };
 
 
-// strength goes from  0 to 1, the rest is in dB
-gain_computer_non_smoothed_db(strength,thresh,knee,level) =
+gain_computer(strength,thresh,knee,level) =
   select3((level>(thresh-(knee/2)))+(level>(thresh+(knee/2))),
           0,
           ((level-thresh+(knee/2)) : pow(2)/(2*max(ma.EPSILON,knee))),
           (level-thresh))
   : max(0)*-strength;
 
-//*****************************************************************************
-//                 GUI
-//*****************************************************************************
 
-threshold = hslider("[03]threshold", 0, -70, 0, 0.1) : si.smoo ;
-knee = hslider("knee", 0, 0, 30, 0.1) : si.smoo;
-sdKnee = hslider("slow down knee", ma.EPSILON, ma.EPSILON, 30, 0.1) : si.smoo;
-// threshold = hslider("threshold", 0, -70.0, 0.0, 0.01) : si.smoo: ba.db2linear ;
-// knee = hslider("knee", 0.5, 0.0, 1.0, 0.001) : si.smoo;
-pre_gain = hslider("pre-gain", 0, -30.0, 30.0, 0.01) : si.smoo: ba.db2linear ;
-// pre_gain = hslider("pre-gain", ba.linear2db(ma.PI/2), -30.0, 30.0, 0.01) : ba.db2linear : si.smoo;
+///////////////////////////////////////////////////////////////////////////////
+//                               smoothers                                   //
+///////////////////////////////////////////////////////////////////////////////
 
-rel = hslider("release", 80, 0, 500, 0.1)*0.001;
+// fixed order
+smoother(order, att, rel, xx) =
+  smootherOrder(order,order, att, rel, xx);
+
+smootherOrder(maxOrder,order, att, rel, xx) =
+  smootherARorder(maxOrder,order, order, att, rel, xx);
+
+smootherARorder(maxOrder,orderAtt, orderRel, att, rel, xx) =
+  xx : seq(i, maxOrder, loop(i) ~ _)
+with {
+  loop(i,fb, x) = coeff(i) * fb + (1.0 - coeff(i)) * x
+  with {
+  cutoffCorrection(order) = 1.0 / sqrt(pow(2.0, 1.0 / order) - 1.0);
+  coeff(i) =
+    ba.if(x > fb, attCoeff(i), relCoeff(i) );
+  attCoeff(i) =
+    exp(-TWOPIT * cutoffCorrection(orderAtt) / max(ma.EPSILON, att))
+    * (i<orderAtt);
+  relCoeff(i) =
+    exp(-TWOPIT * cutoffCorrection(orderRel) / max(ma.EPSILON, rel))
+    * (i<orderRel);
+  TWOPIT = 2 * ma.PI * ma.T;
+};
+};
+
+///////////////////////////////////////////////////////////////////////////////
+//                                    GUI                                   //
+///////////////////////////////////////////////////////////////////////////////
+
+inputGain = hslider("[01]input gain", 0, -24, 24, 0.1):ba.db2linear:si.smoo;
+strength = hslider("[02]strength", 100, 0, 100, 1) * 0.01;
+thresh = hslider("[03]thresh",-1,-30,0,0.1);
+attack = hslider("[04]attack[unit:ms] [scale:log]",9, 1, maxAttack*1000,0.1)*0.001;
+release = hslider("[06]release[unit:ms] [scale:log]",60,0.1,maxRelease*1000,1)*0.001;
+knee = hslider("[09]knee",1,0,72,0.1);
+
+// 100 ms
+maxAttack = 0.1;
+// 2 sec
+maxRelease = 2;
