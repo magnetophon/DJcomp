@@ -91,9 +91,9 @@ with {
     gain_computer(strength,thresh,knee)
     // <:  (ba.db2linear,_)
     // : autoSmoother
-    : ba.db2linear
+    // : ba.db2linear
     : smootherARorder(maxOrder, orderRelR,orderAttR, adaptiveRel, att)
-    : ba.linear2db
+      // : ba.linear2db
     : hbargraph("GR[unit:dB]", -24, 0);
   adaptiveRel =
     // select2(checkbox("adaptive")
@@ -104,12 +104,13 @@ with {
             ;
             ref =
               (prevGain+slowKnee)
-              : min(0)
-              : ba.db2linear
+              // : min(0)
+              // : ba.bypass1(linLog,ba.db2linear)
               : smootherOrder(maxOrder,refOrder,refRel,0)
-              : ba.linear2db
+                // : ba.bypass1(linLog,ba.linear2db)
               : hbargraph("ref[unit:dB]", -24, 0)
   ;
+  linLog = checkbox("linLog");
   refRel =
     // select2( checkbox("refRelSel")
     // ,
@@ -121,7 +122,7 @@ with {
     // , interpolate_logarithmic(dv, relR,hslider("slow ref[unit:s] [scale:log]", 13, 1, 1000, 1))
     // , it.interpolate_linear(dv  , relR,hslider("slow ref[unit:s] [scale:log]", 13, 1, 100, 1))
     // )
-    *1@200
+    // *1@200
   ;
   dv= ((((fastGR
           // +dead
@@ -158,7 +159,7 @@ with {
     // 1;
     hslider("[07]slow release order", 1, 1, maxOrder, 1);
   factor = hslider("[08]factor", 0.1, 0, 10, 0.1);
-  slowKnee = hslider("[09]slow knee",1,0,72,0.1);
+  slowKnee = hslider("[09]slow knee",12,0,72,0.1);
   refOrder =
     1;
   // hslider("[10]ref release order", 1, 1, maxOrder, 1);
@@ -211,7 +212,7 @@ with {
 inputGain = hslider("[01]input gain", 0, -24, 24, 0.1):ba.db2linear:si.smoo;
 strength = hslider("[02]strength", 100, 0, 100, 1) * 0.01;
 thresh = hslider("[03]thresh",-1,-30,0,0.1);
-attack = hslider("[04]attack[unit:ms] [scale:log]",9, 1, maxAttack*1000,0.1)*0.001;
+attack = hslider("[04]attack[unit:ms] [scale:log]",9, 0.1, maxAttack*1000,0.1)*0.001;
 release = hslider("[06]release[unit:ms] [scale:log]",60,0.1,maxRelease*1000,1)*0.001;
 knee = hslider("[09]knee",1,0,72,0.1);
 
