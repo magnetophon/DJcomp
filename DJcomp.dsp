@@ -51,12 +51,20 @@ DJcomp =
 
 compressor_N_chan(strength,thresh,att,rel,knee,link,N) =
   par(i, N, _*inputGain)
-  <: (
-  par(i, N, _)
- ,(compression_gain_N_chan(strength,thresh,att,rel,knee,link,N))
+  <: si.bus(N*2)
+  : (
+  si.bus(N)
+  // par(i, N, _)
+  ,(compression_gain_N_chan(strength,thresh,att,rel,knee,link,N)
+    <: si.bus(N*2))
 )
-  :(ro.interleave(N,2)
-    : par(i,N, *))
+    // <: si.bus(N*2)
+  :
+  (
+    ro.interleave(N,2)
+    : par(i,N, *)
+  )
+, si.bus(N)
 ;
 
 compression_gain_N_chan(strength,thresh,att,rel,knee,link,1) =
@@ -86,12 +94,12 @@ with {
     : ba.db2linear
     : smootherARorder(maxOrder, orderRelR,orderAttR, adaptiveRel, att)
     : ba.linear2db
-    : hbargraph("GR", -24, 0);
+    : hbargraph("GR[unit:dB]", -24, 0);
   adaptiveRel =
     // select2(checkbox("adaptive")
     // ,
     fade_to_inf(1-dv,rel)
-    // ,interpolate_logarithmic(1-dv,rel, hslider("slow adap", 1, 1, 100, 1))
+    // ,interpolate_logarithmic(1-dv,rel, hslider("slow adap[unit:s] [scale:log]", 1, 1, 1000, 1))
     // )
             ;
             ref =
@@ -101,55 +109,60 @@ with {
               : smootherOrder(maxOrder,refOrder,refRel,0)
               : ba.linear2db
               : hbargraph("ref[unit:dB]", -24, 0)
-            ;
-            refRel =
-              select2( checkbox("refRelSel")
-                       // , fade_to_inf(dv, relR)
-                     , interpolate_logarithmic(dv, relR,relR/ma.EPSILON)
-                     , interpolate_logarithmic(dv, relR,hslider("slow ref", 10, 1, 100, 1))
-                       // , it.interpolate_linear(dv, relR,hslider("slow ref", 10, 1, 100, 1))
-                     )
-            ;
-            dv = ((((fastGR
-                     +dead
-                    ):min(0))
-                   / (slowKnee
-                      -dead
-                     )
-                  )*-1):min(1)
-                 : hbargraph("dv", 0, 1)
-            ;
-            fastGR = (prevGain-prevRef):min(0):hbargraph("fast GR[unit:dB]", -24, 0);
-            autoSmoother(lin,db) =
-              lin
-              : smoother(1,autoRelease(db),0)
-              : smoother(4,rel,att)
-            ;
+  ;
+  refRel =
+    // select2( checkbox("refRelSel")
+    // ,
+    // fade_to_inf(dv, relR)
+    // , interpolate_logarithmic(dv, relR,relR/ma.EPSILON)
+    // , interpolate_linear(dv, relR,relR/ma.EPSILON)
+    // ,
+    interpolate_logarithmic(dv, relR,relR/ma.EPSILON)
+    // , interpolate_logarithmic(dv, relR,hslider("slow ref[unit:s] [scale:log]", 13, 1, 1000, 1))
+    // , it.interpolate_linear(dv  , relR,hslider("slow ref[unit:s] [scale:log]", 13, 1, 100, 1))
+    // )
+    *1@200
+  ;
+  dv= ((((fastGR
+          // +dead
+         ):min(0))
+        / (slowKnee
+           // +dead
+          )
+        )*-1):min(1)
+      : hbargraph("dv", 0, 1)
+  ;
+  fastGR = (prevGain-prevRef):min(0):hbargraph("fast GR[unit:dB]", -24, 0);
+  autoSmoother(lin,db) =
+    lin
+    : smoother(1,autoRelease(db),0)
+    : smoother(4,rel,att)
+  ;
 
-            autoRelease(GR) =
-              rel *
-              ( ((GR+dead)
-                 :min(0)
-                  *-1
-                 :smootherARorder(maxOrder,orderAttR, orderRelR, attR, relR)
-                  * factor
-                ):hbargraph("usf", 0, 10)
-              );
-            maxOrder = 32;
-            attR = hslider("[04]slow attack[unit:ms] [scale:log]",700, 10, 3000,10)*0.001;
-            orderAttR =
-              1;
-            // hslider("[05]slow attack order", 4, 1, maxOrder, 1);
-            relR = hslider("[06]slow release[unit:ms] [scale:log]",700,0.1,5000,0.1)*0.001;
-            orderRelR =
-              1;
-            // hslider("[07]slow release order", 1, 1, maxOrder, 1);
-            factor = hslider("[08]factor", 0.1, 0, 10, 0.1);
-            slowKnee = hslider("[09]slow knee",1,0,72,0.1);
-            refOrder =
-              1;
-            // hslider("[10]ref release order", 1, 1, maxOrder, 1);
-            dead = hslider("dead", 0, 0, 24, 1);
+  autoRelease(GR) =
+    rel *
+    ( ((GR+dead)
+       :min(0)
+        *-1
+       :smootherARorder(maxOrder,orderAttR, orderRelR, attR, relR)
+        * factor
+      ):hbargraph("usf", 0, 10)
+    );
+  maxOrder = 32;
+  attR = hslider("[04]slow attack[unit:ms] [scale:log]",700, 10, 3000,10)*0.001;
+  orderAttR =
+    // 1;
+    hslider("[05]slow attack order", 4, 1, maxOrder, 1);
+  relR = hslider("[06]ref release[unit:s] [scale:log]",7,1,50,1);
+  orderRelR =
+    // 1;
+    hslider("[07]slow release order", 1, 1, maxOrder, 1);
+  factor = hslider("[08]factor", 0.1, 0, 10, 0.1);
+  slowKnee = hslider("[09]slow knee",1,0,72,0.1);
+  refOrder =
+    1;
+  // hslider("[10]ref release order", 1, 1, maxOrder, 1);
+  dead = hslider("dead", 0, 0, 24, 1);
 };
 };
 
