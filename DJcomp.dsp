@@ -15,7 +15,7 @@ import("stdfaust.lib");
 //  Also use attack + release time?
 //
 // Fast release after a transient,
-// Slow release after longer periods ofDog of Man gain reduction.
+// Slow release after longer periods of gain reduction.
 // Aditionally adjust the release time depending on the current amount of gain reduction
 
 top = hslider("top", 1, 0.001, 100, 0.001);
@@ -96,44 +96,30 @@ with {
       // : ba.linear2db
     : hbargraph("GR[unit:dB]", -24, 0);
   adaptiveRel =
-    // select2(checkbox("adaptive")
-    // ,
-    fade_to_inf(1-dv,rel)
-    // ,interpolate_logarithmic(1-dv,rel, hslider("slow adap[unit:s] [scale:log]", 1, 1, 1000, 1))
-    // )
-            ;
-            ref =
-              (prevGain+slowKnee)
-              // : min(0)
-              // : ba.bypass1(linLog,ba.db2linear)
-              : smootherOrder(maxOrder,refOrder,refRel,0)
-                // : ba.bypass1(linLog,ba.linear2db)
-              : hbargraph("ref[unit:dB]", -24, 0)
+    fade_to_inf(1-dv,rel) ;
+
+  ref =
+    (prevGain+slowKnee)
+    : min(0)
+      // : ba.bypass1(linLog,ba.db2linear)
+    : smootherOrder(maxOrder,refOrder,refRel,0)
+      // : ba.bypass1(linLog,ba.linear2db)
+    : hbargraph("ref[unit:dB]", -24, 0)
   ;
   linLog = checkbox("linLog");
   refRel =
-    // select2( checkbox("refRelSel")
-    // ,
-    // fade_to_inf(dv, relR)
-    // , interpolate_logarithmic(dv, relR,relR/ma.EPSILON)
-    // , interpolate_linear(dv, relR,relR/ma.EPSILON)
-    // ,
-    interpolate_logarithmic(dv, relR,relR/ma.EPSILON)
-    // , interpolate_logarithmic(dv, relR,hslider("slow ref[unit:s] [scale:log]", 13, 1, 1000, 1))
-    // , it.interpolate_linear(dv  , relR,hslider("slow ref[unit:s] [scale:log]", 13, 1, 100, 1))
-    // )
-    // *1@200
-  ;
-  dv= ((((fastGR
-          // +dead
-         ):min(0))
+    interpolate_logarithmic(dv, relR,relR/ma.EPSILON) ;
+  dv= (fastGR
+       :min(0)
         / (slowKnee
-           // +dead
           )
-        )*-1):min(1)
+       *-1):min(1)
       : hbargraph("dv", 0, 1)
   ;
-  fastGR = (prevGain-prevRef):min(0):hbargraph("fast GR[unit:dB]", -24, 0);
+  fastGR =
+    (prevGain-prevRef):min(0)
+                       // :hbargraph("fast GR[unit:dB]", -24, 0)
+  ;
   autoSmoother(lin,db) =
     lin
     : smoother(1,autoRelease(db),0)
@@ -149,21 +135,6 @@ with {
         * factor
       ):hbargraph("usf", 0, 10)
     );
-  maxOrder = 32;
-  attR = hslider("[04]slow attack[unit:ms] [scale:log]",700, 10, 3000,10)*0.001;
-  orderAttR =
-    // 1;
-    hslider("[05]slow attack order", 4, 1, maxOrder, 1);
-  relR = hslider("[06]ref release[unit:s] [scale:log]",7,1,50,1);
-  orderRelR =
-    // 1;
-    hslider("[07]slow release order", 1, 1, maxOrder, 1);
-  factor = hslider("[08]factor", 0.1, 0, 10, 0.1);
-  slowKnee = hslider("[09]slow knee",12,0,72,0.1);
-  refOrder =
-    1;
-  // hslider("[10]ref release order", 1, 1, maxOrder, 1);
-  dead = hslider("dead", 0, 0, 24, 1);
 };
 };
 
@@ -212,10 +183,25 @@ with {
 inputGain = hslider("[01]input gain", 0, -24, 24, 0.1):ba.db2linear:si.smoo;
 strength = hslider("[02]strength", 100, 0, 100, 1) * 0.01;
 thresh = hslider("[03]thresh",-1,-30,0,0.1);
-attack = hslider("[04]attack[unit:ms] [scale:log]",9, 0.1, maxAttack*1000,0.1)*0.001;
+attack = hslider("[04]attack[unit:ms] [scale:log]",9, 1000/48000, maxAttack*1000,0.1)*0.001;
 release = hslider("[06]release[unit:ms] [scale:log]",60,0.1,maxRelease*1000,1)*0.001;
 knee = hslider("[09]knee",1,0,72,0.1);
 
+maxOrder = 8;
+attR = hslider("[04]slow attack[unit:ms] [scale:log]",700, 10, 3000,10)*0.001;
+orderAttR =
+  // 1;
+  hslider("[05]slow attack order", 4, 1, maxOrder, 1);
+relR = hslider("[06]ref release[unit:s] [scale:log]",4,1,50,1);
+orderRelR =
+  // 1;
+  hslider("[07]slow release order", 4, 1, maxOrder, 1);
+factor = hslider("[08]factor", 0.1, 0, 10, 0.1);
+slowKnee = hslider("[09]slow knee",12,0,72,0.1);
+refOrder =
+  // 1;
+  hslider("[10]ref release order", 1, 1, maxOrder, 1);
+dead = hslider("dead", 0, 0, 24, 1);
 // 100 ms
 maxAttack = 0.1;
 // 2 sec
