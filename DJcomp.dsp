@@ -99,7 +99,7 @@ with {
     : min(0)
       // : smootherOrder(maxOrder,refOrder,refRel,0)
     : smootherOrder(1,1,refRel,0)
-      // : hbargraph("ref[unit:dB]", -24, 0)
+    : hbargraph("ref[unit:dB]", -24, 0)
   ;
   refRel =
     interpolate_logarithmic(dv, slowRelease,slowRelease/ma.EPSILON) ;
@@ -176,8 +176,7 @@ knee = hslider("[10]knee[unit:dB]",1,0,72,0.1);
 
 maxOrder = 4;
 refOrder =
-  1;
-// hslider("[11]ref release order", 1, 1, maxOrder, 1);
+  hslider("[11]ref release order", 1, 1, maxOrder, 1);
 // 100 ms
 maxAttack = 0.1;
 // 2 sec
