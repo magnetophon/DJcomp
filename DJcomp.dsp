@@ -67,33 +67,45 @@ compression_gain_N_chan(strength,thresh,att,rel,knee,link,N) =
 
 
 compression_gain_mono(strength,thresh,att,rel,knee,level) =
-  (
-    loop~(_,_)
-         : (_,!)
-       , ((level-limThres):max(0)*-1)
-  ):min
-  : smootherARorder(maxOrder, orderRelLim,4, releaseLim, 0)
-  : ba.db2linear
+  loop~(_,_)
+       : (_,!)
+       : ba.db2linear
 with {
   loop(prevGain,prevRef) =
     gain,ref
   with {
   gain =
-    gain_computer(strength,thresh,knee,level)
-    : smootherARorder(maxOrder, orderRel,orderAtt, adaptiveRel, att)
+    (  gain_computer(strength,thresh,knee,level)
+       : ba.db2linear
+       : smootherARorder(maxOrder, orderRel,orderAtt, adaptiveRel, att)
+     , ((level-limThres):max(0)*-1: ba.db2linear)
+    ):min
+    : smootherARorder(maxOrder, orderRelLim,4, releaseLim, 0)
+    : ba.linear2db
     : hbargraph("GR[unit:dB]", -24, 0);
+
   adaptiveRel =
-    fade_to_inf(shaper(adaptShape,1-dv),rel) ;
+    fade_to_inf(
+      // shaper(adaptShape,
+      1-dv
+      // )
+     ,rel) ;
 
   ref =
     (prevGain+transitionRange)
     : min(0)
+    : ba.db2linear
       // : smootherOrder(maxOrder,refOrder,refRel,0)
     : smootherOrder(1,1,refRel,0)
+    : ba.linear2db
     : hbargraph("ref[unit:dB]", -24, 0)
   ;
   refRel =
-    interpolate_logarithmic(shaper(refShape,dv), slowRelease,slowRelease/ma.EPSILON) ;
+    interpolate_logarithmic(
+      // shaper(refShape,
+      dv
+      // )
+    , slowRelease,slowRelease/ma.EPSILON) ;
   dv= (fastGR
        :min(0)
         / (transitionRange
@@ -165,17 +177,17 @@ shaper(s,x) = (x-x*s)/(s-x*2*s+1);
 
 inputGain = hslider("[01]input gain[unit:dB]", 0, -24, 24, 0.1):ba.db2linear:si.smoo;
 strength = hslider("[02]strength[unit:%]", 100, 0, 100, 1) * 0.01;
-thresh = limThres + hslider("[03]thresh offset[unit:dB]",3,-12,12,0.1);
-attack = hslider("[04]attack[unit:ms] [scale:log]",9, 1000/48000, maxAttack*1000,0.1)*0.001;
+thresh = limThres + hslider("[03]thresh offset[unit:dB]",0,-12,12,0.1);
+attack = hslider("[04]attack[unit:ms] [scale:log]",3, 1000/48000, maxAttack*1000,0.1)*0.001;
 orderAtt =
   // 4;
   hslider("[05]attack order", 4, 1, maxOrder, 1);
-fastRelease = hslider("[06]fast release[unit:ms] [scale:log]",60,0.1,maxRelease*1000,1)*0.001;
+fastRelease = hslider("[06]fast release[unit:ms] [scale:log]",420,0.1,maxRelease*1000,1)*0.001;
 transitionRange = hslider("[07]release transition range[unit:dB]",9,0,30,0.1);
-slowRelease = hslider("[08]slow release[unit:ms] [scale:log]",4000,50,10000,50)*0.001;
+slowRelease = hslider("[08]slow release[unit:ms] [scale:log]",2000,50,10000,50)*0.001;
 orderRel =
   // 4;
-  hslider("[09]release order", 4, 1, maxOrder, 1);
+  hslider("[09]release order", 1, 1, maxOrder, 1);
 knee = hslider("[10]knee[unit:dB]",1,0,72,0.1);
 
 maxOrder = 4;
@@ -194,3 +206,5 @@ orderRelLim =
 maxAttack = 0.1;
 // 2 sec
 maxRelease = 2;
+
+// https://www.desmos.com/calculator/qcjwfaaqc5
