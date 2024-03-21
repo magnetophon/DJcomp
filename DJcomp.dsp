@@ -104,7 +104,7 @@ with {
       // : smootherOrder(maxOrder,refOrder,refRel,0)
     : smootherOrder(1,1,refRel,0)
     : ba.linear2db
-    : hbargraph("ref[unit:dB]", -24, 0)
+      // : hbargraph("ref[unit:dB]", -24, 0)
   ;
   refRel =
     interpolate_logarithmic(
@@ -117,7 +117,7 @@ with {
         / (transitionRange
           )
         *-1):min(1)
-      : hbargraph("dv", 0, 1)
+             // : hbargraph("dv", 0, 1)
   ;
   fastGR =
     (prevGain-prevRef):min(0)
@@ -184,10 +184,10 @@ shaper(s,x) = (x-x*s)/(s-x*2*s+1);
 //                                    GUI                                   //
 ///////////////////////////////////////////////////////////////////////////////
 
-oneKnob = hslider("one knob", 0, 0, 1, 0.01);
+oneKnob = hslider("one knob", 0, 0, 1, 0.01):si.smoo;
 
 inputGainSlider = hslider("[01]input gain[unit:dB]", 0, -24, 24, 0.1):si.smoo;
-inputGain = (inputGainSlider + it.remap(0, 0.5, -3, 9,oneKnob:min(0.5))):ba.db2linear;
+inputGain = (inputGainSlider + it.remap(0, 0.5, -3, 6,oneKnob:min(0.5))):ba.db2linear;
 strength = it.remap(0, 0.5, 0, 1,oneKnob:min(0.5));
 // hslider("[02]strength[unit:%]", 100, 0, 100, 1) * 0.01;
 
