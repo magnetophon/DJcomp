@@ -1,4 +1,3 @@
-
 declare name "DJcomp";
 declare version "0.1";
 declare author "Bart Brouns";
@@ -72,7 +71,7 @@ with {
     : smootherARorder(maxOrder, orderRelLim,4, releaseLim, 0)
     : ba.linear2db
       * strength
-    : hbargraph("GR[unit:dB]", -24, 0);
+    : hbargraph("GR[unit:dB]", -12, 0);
 
   adaptiveRel =
     fade_to_inf(
