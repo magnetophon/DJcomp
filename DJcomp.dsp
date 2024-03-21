@@ -23,6 +23,10 @@ import("stdfaust.lib");
 // 0.25 -> 0.5   = knee 12 -> 0,  gain 3 -> 6
 // 0.5  -> 1     = leveler threshold 0 -> 6, lev rel gets shorter, lim stays the same
 
+// 0 -> 0.5 = strength 0 -> 1, gain -3 -> 6
+// 0.5 -> 1 = offset 0 -> 6, knee 9 -> 15
+
+
 process =
   DJcomp;
 
@@ -75,13 +79,15 @@ with {
     gain,ref
   with {
   gain =
-    (  gain_computer(strength,thresh,knee,level)
+    (  gain_computer(1,thresh,knee,level)
        : ba.db2linear
        : smootherARorder(maxOrder, orderRel,orderAtt, adaptiveRel, att)
-     , ((level-limThres):max(0)*-1: ba.db2linear)
+         // , ((level-limThres):max(0)*-1: ba.db2linear)
+     , (gain_computer(1,limThres,limKnee,level): ba.db2linear)
     ):min
     : smootherARorder(maxOrder, orderRelLim,4, releaseLim, 0)
     : ba.linear2db
+      * strength
     : hbargraph("GR[unit:dB]", -24, 0);
 
   adaptiveRel =
@@ -133,6 +139,9 @@ gain_computer(strength,thresh,knee,level) =
 //                               smoothers                                   //
 ///////////////////////////////////////////////////////////////////////////////
 
+// smoother adapted from Dario Sanfilippo
+// https://github.com/dariosanfilippo/limiterStereo/blob/da1c38cc393f08b5dd79e56ffd4e6256af07a708/limiterStereo.dsp#L90-L101
+//
 // fixed order
 smoother(order, att, rel, xx) =
   smootherOrder(order,order, att, rel, xx);
@@ -175,33 +184,57 @@ shaper(s,x) = (x-x*s)/(s-x*2*s+1);
 //                                    GUI                                   //
 ///////////////////////////////////////////////////////////////////////////////
 
-inputGain = hslider("[01]input gain[unit:dB]", 0, -24, 24, 0.1):ba.db2linear:si.smoo;
-strength = hslider("[02]strength[unit:%]", 100, 0, 100, 1) * 0.01;
-thresh = limThres + hslider("[03]thresh offset[unit:dB]",0,-12,12,0.1);
-attack = hslider("[04]attack[unit:ms] [scale:log]",3, 1000/48000, maxAttack*1000,0.1)*0.001;
-orderAtt =
-  // 4;
-  hslider("[05]attack order", 4, 1, maxOrder, 1);
-fastRelease = hslider("[06]fast release[unit:ms] [scale:log]",420,0.1,maxRelease*1000,1)*0.001;
-transitionRange = hslider("[07]release transition range[unit:dB]",9,0,30,0.1);
-slowRelease = hslider("[08]slow release[unit:ms] [scale:log]",2000,50,10000,50)*0.001;
-orderRel =
-  // 4;
-  hslider("[09]release order", 1, 1, maxOrder, 1);
-knee = hslider("[10]knee[unit:dB]",1,0,72,0.1);
+oneKnob = hslider("one knob", 0, 0, 1, 0.01);
 
+inputGainSlider = hslider("[01]input gain[unit:dB]", 0, -24, 24, 0.1):si.smoo;
+inputGain = (inputGainSlider + it.remap(0, 0.5, -3, 9,oneKnob:min(0.5))):ba.db2linear;
+strength = it.remap(0, 0.5, 0, 1,oneKnob:min(0.5));
+// hslider("[02]strength[unit:%]", 100, 0, 100, 1) * 0.01;
+
+thresh =
+  // limThres + hslider("[03]thresh offset[unit:dB]",0,-12,12,0.1);
+  limThres + it.remap(0.5, 1, 0, 6,oneKnob:max(0.5));
+attack =
+  0.009;
+// hslider("[04]attack[unit:ms] [scale:log]",9, 1000/48000, maxAttack*1000,0.1)*0.001;
+orderAtt =
+  4;
+// hslider("[05]attack order", 4, 1, maxOrder, 1);
+fastRelease =
+  0.42;
+// hslider("[06]fast release[unit:ms] [scale:log]",420,0.1,maxRelease*1000,1)*0.001;
+transitionRange =
+  9;
+// hslider("[07]release transition range[unit:dB]",9,0,30,0.1);
+slowRelease =
+  // hslider("[08]slow release[unit:ms] [scale:log]",2000,50,10000,50)*0.001;
+  it.remap(0.5, 1, 2, 0.5,oneKnob:max(0.5));
+orderRel =
+  1;
+// hslider("[09]release order", 1, 1, maxOrder, 1);
+knee =
+  // hslider("[10]knee[unit:dB]",1,0,72,0.1);
+  it.remap(0.5, 1, 9, 15,oneKnob:max(0.5));
 maxOrder = 4;
 refOrder =
   hslider("[11]ref release order", 1, 1, maxOrder, 1);
 adaptShape = hslider("[12]adapt shape", 0, -1, 1, 0.001);
 refShape = hslider("[13]ref shape", 0, -1, 1, 0.001);
 
-limThres = hslider("[14]lim thresh[unit:dB]",-1,-30,30,0.1);
-releaseLim = hslider("[15]release limiter[unit:ms] [scale:log]",60,5,500,1)*0.001;
-orderRelLim =
-  // 4;
-  hslider("[16]lim release order", 4, 1, maxOrder, 1);
+// give it some headroom.
+// when built into a mixer, there should be a limiter on the master.
+// if that is done, this can come back up to -1dB
+limThres = hslider("[14]thresh[unit:dB]",-6,-30,30,0.1);
+releaseLim =
+  // hslider("[15]release limiter[unit:ms] [scale:log]",60,5,500,1)*0.001;
+  it.remap(0.5, 1, 0.06, 0.12,oneKnob:max(0.5));
 
+orderRelLim =
+  4;
+// hslider("[16]lim release order", 4, 1, maxOrder, 1);
+limKnee =
+  // hslider("[17]lim knee[unit:dB]",1,0,72,0.1);
+  it.remap(0.5, 1, 12, 0,oneKnob:max(0.5));
 // 100 ms
 maxAttack = 0.1;
 // 2 sec
