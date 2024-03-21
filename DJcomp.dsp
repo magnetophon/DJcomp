@@ -7,31 +7,15 @@ declare copyright "2024, Bart Brouns";
 
 import("stdfaust.lib");
 
-// TODO:
-// Auto Makeup: compensates for the drop in output level caused by gain reduction. It
-// determines the theoretical compensation at a given threshold / ratio setting – for instance
-// -20dB and 4:1 gives 5dB – and applies half of that value (2.5dB) to achieve the same perceived
-// loudness.�
-//  Also use attack + release time?
-//
-// Fast release after a transient,
-// Slow release after longer periods of gain reduction.
-// Aditionally adjust the release time depending on the current amount of gain reduction
 
-// One knob compressor:
-// 0    -> 0.25  = knee 0  -> 12, gain 0 -> 3
-// 0.25 -> 0.5   = knee 12 -> 0,  gain 3 -> 6
-// 0.5  -> 1     = leveler threshold 0 -> 6, lev rel gets shorter, lim stays the same
-
-// 0 -> 0.5 = strength 0 -> 1, gain -3 -> 6
-// 0.5 -> 1 = offset 0 -> 6, knee 9 -> 15
-
+enableGRout = 0;
+// enable gain reduction outputs
 
 process =
   DJcomp;
 
 DJcomp =
-  compressor_N_chan(strength,thresh,attack,fastRelease,knee,1,2);
+  compressor_N_chan(strength,thresh,attack,fastRelease,knee,1,2) ;
 
 compressor_N_chan(strength,thresh,att,rel,knee,link,N) =
   par(i, N, _*inputGain)
@@ -39,16 +23,16 @@ compressor_N_chan(strength,thresh,att,rel,knee,link,N) =
   : (
   si.bus(N)
   // par(i, N, _)
-  ,(compression_gain_N_chan(strength,thresh,att,rel,knee,link,N)
-    <: si.bus(N*2))
+ ,(compression_gain_N_chan(strength,thresh,att,rel,knee,link,N)
+   <: si.bus(N*2)
+  )
 )
-    // <: si.bus(N*2)
-  :
-  (
+  : (
     ro.interleave(N,2)
     : par(i,N, *)
   )
 , si.bus(N)
+  : postProc(N,enableGRout)
 ;
 
 compression_gain_N_chan(strength,thresh,att,rel,knee,link,1) =
@@ -134,6 +118,8 @@ gain_computer(strength,thresh,knee,level) =
           (level-thresh))
   : max(0)*-strength;
 
+postProc(N,0) = si.bus(N),par(i, N, !);
+postProc(N,1) = si.bus(N*2);
 
 ///////////////////////////////////////////////////////////////////////////////
 //                               smoothers                                   //
